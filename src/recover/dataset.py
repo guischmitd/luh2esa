@@ -63,3 +63,8 @@ class RasterDataset:
     def sample_timesteps(self):
         pass
 
+def sample_years(dataset, years: list[int|str]):
+    pass
+
+def sample_patch(dataset, bounds):
+    pass
