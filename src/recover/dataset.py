@@ -1,70 +1,81 @@
-from abc import ABC, abstractmethod
+from pathlib import Path
+from pprint import pprint
 
 import pandas as pd
 import numpy as np
+import rasterio as rio
+
+def cell2idx(cell_id: int, cols: int = 180):
+    """
+    Given an integer cell_id and a raster width in pixels (cols) 
+    return the (i, j) coordinates of the cell.
+    """
+    j = int(cell_id % cols)
+    i = int(cell_id // cols)
+    return i, j
+
+def raster_to_df(raster_path: Path):
+    """
+    Reads a **single-band** raster and converts it to the standard 
+    dataframe format with cell_id as the index. 
+    """
+    # TODO ensure multiband is interpreted correctly
+    with rio.open(raster_path, 'r') as raster:
+        data = raster.read()
+        pprint(raster.meta)
+        null_value = raster.meta.get('nodata')
+
+    h, w = data.shape[-2:]
+    df = pd.DataFrame(data.ravel(), index=range(1, 1 + h * w), columns=[raster_path.stem])
+    df = df.replace(null_value, None).dropna()
+    df.index.name = 'cell'
+    return df
 
 
 class RasterDataset:
-    def __init__(self, df: pd.DataFrame, x_col: str = 'x', y_col: str = 'y', t_col = 'year'):
-        self.data = df
-        self.x_col = x_col
-        self.y_col = y_col
-        self.t_col = t_col
-        self.time_steps = sorted(df[self.t_col].unique().tolist())  
-        self.bands = [c for c in df.columns if c not in [x_col, y_col, t_col]]
+    def __init__(self, 
+                 df: pd.DataFrame, 
+                 id_col: str = 'cell', 
+                 width: int = 180, 
+                 height: int = 157, 
+                 time_col = 'year'):
+        self.data = df.set_index(id_col) if df.index.name != id_col else df
+        self.width = width
+        self.id_col = id_col
+        self.height = height
+        self.time_col = time_col
+        self.time_steps = sorted(df[self.time_col].unique().tolist())  
+        self.bands = [c for c in df.columns if c not in [time_col, id_col]]
         print(f"Initialising raster dataset with bands {self.bands}")
         
-        self.__init_image_attrs()
         self.arr = self.__init_array()
         print(f'Finished building array with shape {self.arr.shape}')
 
-    def __init_image_attrs(self):
-        self.W, self.H = self.data[self.x_col].nunique(), self.data[self.y_col].nunique()
-
-        unique_x = self.data[self.x_col].drop_duplicates()
-        unique_y = self.data[self.y_col].drop_duplicates()
-
-        self.XMAP = unique_x.rank().astype(int) - 1
-        self.XMAP.index = unique_x.values
-
-        self.YMAP = unique_y.rank(ascending=False).astype(int) - 1
-        self.YMAP.index = unique_y.values
-        
-        self.unique_x = unique_x.values
-        self.unique_y = unique_y.values
-
     def __init_array(self):
-        mesh = np.meshgrid(self.unique_y, self.unique_x)
-        spine = pd.DataFrame([arr.flatten() for arr in mesh], index=['y', 'x']).T
+        spine = pd.DataFrame(index=range(1, self.width * self.height + 1))
         
-        arr = np.full((len(self.time_steps), len(self.bands), self.H, self.W), np.nan, dtype=np.float32)
+        arr = np.full((len(self.time_steps), len(self.bands), self.height, self.width), 255.0, dtype=np.float32)
         for i, t in enumerate(self.time_steps):
-            year_data = spine.merge(self.data.query(f"{self.t_col} == {t}"), 
-                                    on=['x', 'y'],
+            year_data = spine.join(self.data.query(f"{self.time_col} == {t}"), 
                                     how='left').copy()
+            
             for j, b in enumerate(self.bands):
                 band_array = (
-                    year_data.set_index(['y', 'x'])
-                    .sort_index(ascending=[False, True])        
-                    [b].values.reshape((self.H, self.W))
+                    year_data.
+                    sort_index()
+                    [b].values.reshape((self.height, self.width))
                     )
                 arr[i, j, :, :] = band_array
 
         return arr
     
+    def to_file(self, out_path: Path, reference_raster: Path):
+        with rio.open(reference_raster, 'r') as ref:
+            meta = ref.meta
+        with rio.open(out_path, 'w') as out:
+            out.write(self.arr)
+    
     @property
     def pixel_count(self):
         """Counts the number of non-null pixels"""
         return (~np.isnan(self.arr.mean(axis=0).mean(axis=0))).sum()
-
-    def sample_pixels(self):
-        return self.data
-
-    def sample_timesteps(self):
-        pass
-
-def sample_years(dataset, years: list[int|str]):
-    pass
-
-def sample_patch(dataset, bounds):
-    pass

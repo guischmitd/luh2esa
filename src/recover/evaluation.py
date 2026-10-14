@@ -3,8 +3,6 @@ import numpy as np
 
 from recover.dataset import RasterDataset
 
-def align_datasets(left_ds: RasterDataset, right_ds: RasterDataset):
-    """Returns filtered copies of both provided datasets"""
 
 class ImagePatchCV(BaseCrossValidator):
     def __init__(self, test_size: float = 0.2, k=5, min_size=5, max_size=30):
