@@ -14,19 +14,25 @@ def cell2idx(cell_id: int, cols: int = 180):
     i = int(cell_id // cols)
     return i, j
 
-def raster_to_df(raster_path: Path):
+def raster_to_df(raster_path: Path, band_name: str | None = None):
     """
     Reads a **single-band** raster and converts it to the standard 
-    dataframe format with cell_id as the index. 
+    dataframe format with cell_id as the index.
+    
+    Optionally provide a band_name to be used as the DF column name, 
+    otherwise the filename will be used.
     """
     # TODO ensure multiband is interpreted correctly
     with rio.open(raster_path, 'r') as raster:
         data = raster.read()
+        print(f'DATA SHAPE: {data.shape}')
+        print('METADATA:')
         pprint(raster.meta)
         null_value = raster.meta.get('nodata')
 
+    band_name = band_name or raster_path.stem
     h, w = data.shape[-2:]
-    df = pd.DataFrame(data.ravel(), index=range(1, 1 + h * w), columns=[raster_path.stem])
+    df = pd.DataFrame(data.ravel(), index=range(1, 1 + h * w), columns=[band_name])
     df = df.replace(null_value, None).dropna()
     df.index.name = 'cell'
     return df
@@ -52,7 +58,7 @@ class RasterDataset:
         print(f'Finished building array with shape {self.arr.shape}')
 
     def __init_array(self):
-        spine = pd.DataFrame(index=range(1, self.width * self.height + 1))
+        spine = pd.DataFrame(index=range(1, self.width * self.height + 1))  # R is index-1
         
         arr = np.full((len(self.time_steps), len(self.bands), self.height, self.width), 255.0, dtype=np.float32)
         for i, t in enumerate(self.time_steps):
@@ -79,3 +85,7 @@ class RasterDataset:
     def pixel_count(self):
         """Counts the number of non-null pixels"""
         return (~np.isnan(self.arr.mean(axis=0).mean(axis=0))).sum()
+
+    def get_time_slice(self, timestamps: list, return_year: bool = False):
+        cols_to_return = self.bands if not return_year else ['year'] + self.bands
+        return self.data.loc[self.data[self.time_col].isin(timestamps), cols_to_return]

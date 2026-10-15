@@ -1,7 +1,50 @@
-from sklearn.model_selection import BaseCrossValidator
-import numpy as np
+from typing import TYPE_CHECKING
 
-from recover.dataset import RasterDataset
+from sklearn.model_selection import BaseCrossValidator
+from sklearn.metrics import mean_absolute_error
+from scipy.special import rel_entr
+import numpy as np
+import pandas as pd
+
+if TYPE_CHECKING:
+    from recover.dataset import RasterDataset
+
+
+def kl_divergence(y_true, y_pred, eps=1e-12):
+    if isinstance(y_true, pd.DataFrame):
+        y_true = y_true.copy().to_numpy()
+    if isinstance(y_pred, pd.DataFrame):
+        y_pred = y_pred.copy().to_numpy()
+
+    y_pred = np.clip(y_pred, eps, 1.0)
+    y_pred = y_pred / y_pred.sum(axis=1, keepdims=True)
+    return np.mean(np.sum(rel_entr(y_true, y_pred), axis=1))
+
+
+def js_divergence(y_true, y_pred, eps=1e-12):
+    if isinstance(y_true, pd.DataFrame):
+        y_true = y_true.copy().to_numpy()
+    if isinstance(y_pred, pd.DataFrame):
+        y_pred = y_pred.copy().to_numpy()
+
+    y_true = np.clip(y_true, eps, 1.0)
+    y_pred = np.clip(y_pred, eps, 1.0)
+
+    y_true /= y_true.sum(axis=1, keepdims=True)
+    y_pred /= y_pred.sum(axis=1, keepdims=True)
+
+    m = 0.5 * (y_true + y_pred)
+
+    js = 0.5 * (
+        np.sum(rel_entr(y_true, m), axis=1)
+        + np.sum(rel_entr(y_pred, m), axis=1)
+    )
+
+    return np.mean(js)
+
+
+def evaluate(y_true, y_pred, metrics=[kl_divergence, js_divergence, mean_absolute_error], name='result'):
+    return pd.Series({m.__name__: m(y_true, y_pred) for m in metrics}, name=name)
 
 
 class ImagePatchCV(BaseCrossValidator):
