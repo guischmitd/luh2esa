@@ -51,7 +51,7 @@ class SimplexRegression:
         return self
 
     def predict(self, X):
-        return X @ self.B.T
+        return np.asarray(X @ self.B.T)
     
 
 class MultiOutputOLS():
@@ -61,7 +61,7 @@ class MultiOutputOLS():
     def fit(self, X, y):
         assert y.ndim == 2, f'y must be a 2d matrix or dataframe, received {type(y)} with shape {y.shape}'
         if isinstance(y, pd.DataFrame):
-            y = y.copy().to_numpy()
+            y = y.to_numpy()
 
         for col_idx in range(y.shape[1]):
             model = LinearRegression(positive=True)
